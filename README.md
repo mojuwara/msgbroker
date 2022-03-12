@@ -39,6 +39,4 @@
 * Field to determine if broadcast or send to 1 person
 * Give ID to messages
 * Check how much memory is used as number of goroutines increases
-
-## Possible implementations
-* Create a fixed number of goroutines at the start, hash the queue topic and each goroutine will handle a range of keys
+* Have some restriction on who can send a message to the msgbroker

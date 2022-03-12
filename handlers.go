@@ -32,6 +32,9 @@ var CHANNELS []chan Msg
 // The number of partitions(and worker goroutines) created to process messages
 var PARTITIONS int
 
+// After a goroutine handles this many messages, will save to DB
+const PersistThreshold = 50
+
 // TODO: Send response to sender that this message was received
 func handlePost(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
@@ -48,14 +51,20 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 	err = json.Unmarshal(body, &msg)
 	if err != nil {
 		logger.Println("Error while unmarshalling message", err)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Could not unmarshal msg" + err.Error()))
 		return
 	}
-	logger.Printf("Message for queue: %s, from: %s, id: %d, act: %s received\n", msg.Queue, msg.Sender, msg.id, msg.Act)
 
+	logger.Printf("Message for queue: %s, from: %s, id: %d, act: %s received\n", msg.Queue, msg.Sender, msg.id, msg.Act)
 	channel := CHANNELS[FindRange(RANGES, Hash(msg.Queue, KEYRANGE))]
 	channel <- msg
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Message received"))
 }
 
+// Save to a DB every 100 messages?
 func worker(channel chan Msg) {
 	// Create the map of queue topics to subscribers
 	queue := make(QueueType)
@@ -83,13 +92,13 @@ func retryFailedMsg(msg *Msg, channel chan Msg) {
 // Calls the correct function to handle this message
 func processMsg(msg *Msg, queue QueueType) {
 	switch msg.Act {
-	case "Sub":
+	case Sub:
 		AddSubscriber(msg, queue)
-	case "Unsub":
+	case Unsub:
 		RemoveSubscriber(msg, queue)
-	case "Publish":
+	case Pub:
 		publishMsg(msg, queue)
-	case "Create":
+	case Create:
 		CreateTopic(msg, queue)
 	default:
 		logger.Println("Invalid action specified in message")
@@ -103,6 +112,7 @@ func CreateTopic(msg *Msg, queue QueueType) {
 		queue[msg.Queue] = make(SubsType)
 	}
 	msg.status = Success
+	logger.Println("Created queue topic:", msg.Queue)
 }
 
 // Add  subscriber to queue list
@@ -132,6 +142,7 @@ func RemoveSubscriber(msg *Msg, queue QueueType) {
 
 // Publish message to first person we find subscribed to this queue
 func publishMsg(msg *Msg, queue QueueType) {
+	logger.Println("in publishMsg")
 	subs, ok := queue[msg.Queue]
 	if !ok {
 		logger.Printf("Message for queue: %s, from: %s, id: %d, act: %s is invalid. Cannot publish to queue topic that does not exist.\n", msg.Queue, msg.Sender, msg.id, msg.Act)
@@ -148,14 +159,15 @@ func publishMsg(msg *Msg, queue QueueType) {
 	}
 
 	// Send message to recepient
+	subscriber := GetRandomSub(subs)
 	bodyBuffer := bytes.NewBuffer(body)
-	resp, err := http.Post(GetRandomSub(subs), "application/json", bodyBuffer)
+	resp, err := http.Post(subscriber, "application/json", bodyBuffer)
 	if err == nil && resp.StatusCode == 200 {
 		msg.status = Success
-		logger.Printf("Message for queue: %s, from: %s, id: %d, act: %s sent successfully.\n", msg.Queue, msg.Sender, msg.id, msg.Act)
+		logger.Printf("Message for queue: %s, from: %s, id: %d, act: %s sent successfully to %s.\n", msg.Queue, msg.Sender, msg.id, msg.Act, subscriber)
 	} else {
 		msg.status = Failed
-		logger.Printf("Message for queue: %s, from: %s, id: %d, act: %s failed to send.\n", msg.Queue, msg.Sender, msg.id, msg.Act)
+		logger.Printf("Message for queue: %s, from: %s, id: %d, act: %s failed to send to %s.\n", msg.Queue, msg.Sender, msg.id, msg.Act, subscriber)
 	}
 }
 

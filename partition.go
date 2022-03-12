@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 )
 
-// n is the key range(from [0, n], consider having a start?)
-// p is the number of partitions you want
+// keyRange(from [0, n], consider having a start?)
+// partitions is the number of partitions you want
 // Does not support floating point numbers
 // Returns an slice of numbers, each number in the array is where that range ends
 func MakePartitions(keyRange int, partitions int) []int {

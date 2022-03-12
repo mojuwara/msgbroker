@@ -38,11 +38,20 @@ func main() {
 
 type Status int
 
+// Possible statuses for a message
 const (
 	Failed     Status = 0
 	Success    Status = 1
 	Processing Status = 2
 	Invalid    Status = 3
+)
+
+// Valid actions for an incoming message
+const (
+	Sub    = "Sub"
+	Pub    = "Pub"
+	Unsub  = "Unsub"
+	Create = "Create"
 )
 
 type Msg struct {
