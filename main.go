@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"time"
 )
 
 var logger = log.Default()
@@ -29,6 +30,9 @@ func main() {
 		go worker(channel)
 	}
 
+	// Worker that stores messages in DB and assigns IDs
+	go persistWorker()
+
 	// Start server
 	http.HandleFunc("/msg", handlePost)
 
@@ -48,20 +52,21 @@ const (
 
 // Valid actions for an incoming message
 const (
-	Sub    = "Sub"
-	Pub    = "Pub"
-	Unsub  = "Unsub"
-	Create = "Create"
+	Sub    = "sub"
+	Pub    = "pub"
+	Unsub  = "unsub"
+	Create = "create"
 )
 
 type Msg struct {
-	Act    string `json:"act"` // Sub, Unsub, Publish
-	Body   string `json:"body"`
+	Act    string `json:"act"`    // Sub, Unsub, Publish
+	Body   string `json:"body"`   // Message for subscribers
 	Queue  string `json:"queue"`  // Queue to deliver
 	Sender string `json:"sender"` // Who sent the message
 
 	// Internal fields
-	id      int    // Used to keep track of messages
-	status  Status // Used internally(0 is failed, 1 is delivered, 2 is processing)
-	retries int    // Number of times we retried this message
+	id      string    // Used to keep track of messages
+	status  Status    // Used internally(0 is failed, 1 is delivered, 2 is processing)
+	retries int       // Number of times we retried this message
+	time    time.Time // Time the message was received
 }

@@ -8,6 +8,8 @@ import (
 	"math/rand"
 	"net/http"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Each queue will have a map of subscribers
@@ -33,7 +35,10 @@ var CHANNELS []chan Msg
 var PARTITIONS int
 
 // After a goroutine handles this many messages, will save to DB
-const PersistThreshold = 50
+const PersistThreshold = 100
+
+// Will receive all incoming messages and save them in DB
+var PersistChannel = make(chan Msg, PersistThreshold)
 
 // TODO: Send response to sender that this message was received
 func handlePost(w http.ResponseWriter, r *http.Request) {
@@ -50,13 +55,20 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 	var msg Msg
 	err = json.Unmarshal(body, &msg)
 	if err != nil {
+		logger.Println(string(body))
 		logger.Println("Error while unmarshalling message", err)
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Could not unmarshal msg" + err.Error()))
+		w.Write([]byte("Could not unmarshal msg:" + err.Error()))
 		return
 	}
 
-	logger.Printf("Message for queue: %s, from: %s, id: %d, act: %s received\n", msg.Queue, msg.Sender, msg.id, msg.Act)
+	// Add message to queue for persisting
+	msg.id = uuid.NewString()
+	msg.time = time.Now()
+	PersistChannel <- msg
+
+	// Send message to correct worker
+	logger.Printf("Message for queue: %s, from: %s, id: %s, act: %s received\n", msg.Queue, msg.Sender, msg.id, msg.Act)
 	channel := CHANNELS[FindRange(RANGES, Hash(msg.Queue, KEYRANGE))]
 	channel <- msg
 
@@ -80,10 +92,11 @@ func worker(channel chan Msg) {
 
 // Place message back in the queue after sleeping
 // Retries in 2 secs, then 4 secs, 8, 16, 32, ...
+// TODO: Have a max number of retries
 func retryFailedMsg(msg *Msg, channel chan Msg) {
 	// Sleep time doubles each time the messsage fails to deliver
 	secondsToSleep := time.Duration(math.Exp2(float64(msg.retries)))
-	logger.Printf("Message for queue: %s, from: %s, id: %d, act: %s will be retried in %d seconds", msg.Queue, msg.Sender, msg.id, msg.Act, secondsToSleep)
+	logger.Printf("Message for queue: %s, from: %s, id: %s, act: %s will be retried in %d seconds", msg.Queue, msg.Sender, msg.id, msg.Act, secondsToSleep)
 
 	time.Sleep(time.Second * secondsToSleep)
 	channel <- *msg
@@ -119,7 +132,7 @@ func CreateTopic(msg *Msg, queue QueueType) {
 func AddSubscriber(msg *Msg, queue QueueType) {
 	subs, ok := queue[msg.Queue]
 	if !ok {
-		logger.Printf("Message for queue: %s, from: %s, id: %d, act: %s is invalid. Cannot subscribe to queue topic that does not exist.\n", msg.Queue, msg.Sender, msg.id, msg.Act)
+		logger.Printf("Message for queue: %s, from: %s, id: %s, act: %s is invalid. Cannot subscribe to queue topic that does not exist.\n", msg.Queue, msg.Sender, msg.id, msg.Act)
 		msg.status = Invalid
 		return
 	}
@@ -131,7 +144,7 @@ func AddSubscriber(msg *Msg, queue QueueType) {
 func RemoveSubscriber(msg *Msg, queue QueueType) {
 	subs, ok := queue[msg.Queue]
 	if !ok {
-		logger.Printf("Message for queue: %s, from: %s, id: %d, act: %s is invalid. Cannot unsubscribe to queue topic that does not exist.\n", msg.Queue, msg.Sender, msg.id, msg.Act)
+		logger.Printf("Message for queue: %s, from: %s, id: %s, act: %s is invalid. Cannot unsubscribe to queue topic that does not exist.\n", msg.Queue, msg.Sender, msg.id, msg.Act)
 		msg.status = Invalid
 		return
 	}
@@ -145,7 +158,7 @@ func publishMsg(msg *Msg, queue QueueType) {
 	logger.Println("in publishMsg")
 	subs, ok := queue[msg.Queue]
 	if !ok {
-		logger.Printf("Message for queue: %s, from: %s, id: %d, act: %s is invalid. Cannot publish to queue topic that does not exist.\n", msg.Queue, msg.Sender, msg.id, msg.Act)
+		logger.Printf("Message for queue: %s, from: %s, id: %s, act: %s is invalid. Cannot publish to queue topic that does not exist.\n", msg.Queue, msg.Sender, msg.id, msg.Act)
 		msg.status = Invalid
 		return
 	}
@@ -154,7 +167,7 @@ func publishMsg(msg *Msg, queue QueueType) {
 	body, err := json.Marshal(*msg)
 	if err != nil {
 		// TODO: Tell sender the message failed to be encoded and to check format
-		logger.Printf("Message for queue: %s, from: %s, id: %d, act: %s failed to marshal.\n", msg.Queue, msg.Sender, msg.id, msg.Act)
+		logger.Printf("Message for queue: %s, from: %s, id: %s, act: %s failed to marshal.\n", msg.Queue, msg.Sender, msg.id, msg.Act)
 		return
 	}
 
@@ -164,10 +177,10 @@ func publishMsg(msg *Msg, queue QueueType) {
 	resp, err := http.Post(subscriber, "application/json", bodyBuffer)
 	if err == nil && resp.StatusCode == 200 {
 		msg.status = Success
-		logger.Printf("Message for queue: %s, from: %s, id: %d, act: %s sent successfully to %s.\n", msg.Queue, msg.Sender, msg.id, msg.Act, subscriber)
+		logger.Printf("Message for queue: %s, from: %s, id: %s, act: %s sent successfully to %s.\n", msg.Queue, msg.Sender, msg.id, msg.Act, subscriber)
 	} else {
 		msg.status = Failed
-		logger.Printf("Message for queue: %s, from: %s, id: %d, act: %s failed to send to %s.\n", msg.Queue, msg.Sender, msg.id, msg.Act, subscriber)
+		logger.Printf("Message for queue: %s, from: %s, id: %s, act: %s failed to send to %s.\n", msg.Queue, msg.Sender, msg.id, msg.Act, subscriber)
 	}
 }
 
