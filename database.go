@@ -51,6 +51,8 @@ func persistWorker() {
 
 // Create connection and persist
 func persistInMongo(msgs []Msg) bool {
+	db := os.Getenv("DBNAME")
+	collection := os.Getenv("DBCOLL")
 	ctx := context.TODO()
 	client, err := connectToMongo(ctx)
 	if err != nil {
@@ -66,12 +68,13 @@ func persistInMongo(msgs []Msg) bool {
 	}()
 
 	// Inserts the docs into MongoDB
-	coll := client.Database("test").Collection("messages")
+	coll := client.Database(db).Collection(collection)
 	_, err = coll.InsertMany(ctx, marshalToBson(msgs))
 	if err == nil {
-		logger.Println("Wrote", PersistThreshold, "records into MongoDB")
+		logger.Println("Wrote", len(msgs), "records into MongoDB")
 		return true
 	} else {
+		logger.Println("Unable to persist messages to MongoDB")
 		return false
 	}
 }

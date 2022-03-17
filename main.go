@@ -37,7 +37,7 @@ func main() {
 	http.HandleFunc("/msg", handlePost)
 
 	logger.Println("Started server")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(":3000", nil))
 }
 
 type Status int
