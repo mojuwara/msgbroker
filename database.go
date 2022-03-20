@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -14,10 +15,10 @@ import (
 // TODO: Remove overhead of creating a new connection each time
 // TODO: Add authserver
 func connectToMongo(ctx context.Context) (*mongo.Client, error) {
-	host := os.Getenv("DBHOST")
-	port := os.Getenv("DBPORT")
-	user := os.Getenv("DBUSER")
-	pwrd := os.Getenv("DBPWRD")
+	host := readFromFile(os.Getenv("DBHOST_PATH"))
+	port := readFromFile(os.Getenv("DBPORT_PATH"))
+	user := readFromFile(os.Getenv("DBUSER_PATH"))
+	pwrd := readFromFile(os.Getenv("DBPWRD_PATH"))
 	dbURI := fmt.Sprintf("mongodb://%s:%s@%s:%s", user, pwrd, host, port)
 
 	// Create a new client and connect to the server
@@ -51,8 +52,10 @@ func persistWorker() {
 
 // Create connection and persist
 func persistInMongo(msgs []Msg) bool {
-	db := os.Getenv("DBNAME")
-	collection := os.Getenv("DBCOLL")
+	var (
+		db         = readFromFile(os.Getenv("DBNAME_PATH"))
+		collection = readFromFile(os.Getenv("DBCOLL_PATH"))
+	)
 	ctx := context.TODO()
 	client, err := connectToMongo(ctx)
 	if err != nil {
@@ -94,4 +97,14 @@ func marshalToBson(msgs []Msg) []interface{} {
 		docs = append(docs, bsonVal)
 	}
 	return docs
+}
+
+func readFromFile(path string) string {
+	contents, err := os.ReadFile(path)
+	if err == nil {
+		return strings.TrimSuffix(string(contents), "\n")
+	} else {
+		fmt.Println("Error reading from file", path, err)
+		return ""
+	}
 }
