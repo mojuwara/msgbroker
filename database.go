@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -102,7 +101,7 @@ func marshalToBson(msgs []Msg) []interface{} {
 func readFromFile(path string) string {
 	contents, err := os.ReadFile(path)
 	if err == nil {
-		return strings.TrimSuffix(string(contents), "\n")
+		return string(contents)
 	} else {
 		fmt.Println("Error reading from file", path, err)
 		return ""
